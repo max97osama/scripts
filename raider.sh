@@ -21,6 +21,7 @@ aider \
  --api-key "deepseek=${DEEPSEEK_API_KEY}" \
  --dark-mode \
   --yes-always \
+  --suggest-shell-commands \
   --no-auto-commits \
   --no-git \
   --no-show-release-notes \
