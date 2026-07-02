@@ -15,8 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SUBDOMAINS_FILE="subdomains.txt"
 IPS_FILE="ips.txt"
 URLS_FILE="urls.txt"
+JS_FILE="js.txt"
 
-touch "$SUBDOMAINS_FILE" "$IPS_FILE" "$URLS_FILE"
+touch "$SUBDOMAINS_FILE" "$IPS_FILE" "$URLS_FILE" "$JS_FILE"
 
 log() {
     echo ""
@@ -77,16 +78,34 @@ else
     echo "[-] techrecon.sh skipped: missing script or no input available."
 fi
 
-log "STEP 5: DIRECTORY AND FILE BRUTEFORCE"
+log "STEP 5: NMAP VULNERABILITY SCAN"
+if has_script "nmapscan.sh" && has_file "$IPS_FILE"; then
+    echo "[*] Running nmapscan.sh on each IP..."
+    while IFS= read -r ip; do
+        ip=$(echo "$ip" | tr -d '[:space:]')
+        [ -z "$ip" ] && continue
+        echo "[*] Nmap scanning: $ip"
+        bash "$SCRIPT_DIR/nmapscan.sh" "$ip"
+        sleep 10
+    done < "$IPS_FILE"
+else
+    echo "[-] nmapscan.sh skipped: missing script or ips.txt."
+fi
+
+log "STEP 6: DIRECTORY AND FILE BRUTEFORCE"
 if has_script "dirrecon.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$DIR_WORDLIST"; then
     echo "[*] Running dirrecon.sh..."
     bash "$SCRIPT_DIR/dirrecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$DIR_WORDLIST"
     sleep 5
+    if has_file "burl.txt"; then
+        cat burl.txt >> "$URLS_FILE"
+        echo "[+] burl.txt appended to urls.txt"
+    fi
 else
     echo "[-] dirrecon.sh skipped: missing script, subdomains.txt or dir wordlist."
 fi
 
-log "STEP 6: URL GATHERING"
+log "STEP 7: URL GATHERING"
 if has_script "urlrecon.sh" && has_file "$SUBDOMAINS_FILE"; then
     echo "[*] Running urlrecon.sh with subdomains list..."
     bash "$SCRIPT_DIR/urlrecon.sh" "$DOMAIN" -l "$SUBDOMAINS_FILE"
@@ -99,7 +118,7 @@ else
     echo "[-] urlrecon.sh skipped: missing script."
 fi
 
-log "STEP 7: CRAWLING"
+log "STEP 8: CRAWLING"
 if has_script "crawlrecon.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$DIR_WORDLIST"; then
     echo "[*] Running crawlrecon.sh with subdomains list..."
     bash "$SCRIPT_DIR/crawlrecon.sh" "$SUBDOMAINS_FILE" 3 "$DIR_WORDLIST"
@@ -112,7 +131,7 @@ else
     echo "[-] crawlrecon.sh skipped: missing script or dir wordlist."
 fi
 
-log "STEP 8: JS AND LINK FINDING"
+log "STEP 9: JS AND LINK FINDING"
 if has_script "jsrecon.sh" && has_file "$SUBDOMAINS_FILE"; then
     echo "[*] Running jsrecon.sh with subdomains list..."
     bash "$SCRIPT_DIR/jsrecon.sh" "$SUBDOMAINS_FILE"
@@ -125,7 +144,13 @@ else
     echo "[-] jsrecon.sh skipped: missing script."
 fi
 
-log "STEP 9: FIND URLS FROM JS AND PAGES"
+if has_file "findurls.txt"; then
+    cat findurls.txt >> "$JS_FILE"
+    sort -u "$JS_FILE" -o "$JS_FILE"
+    echo "[+] jsrecon findurls.txt appended to js.txt"
+fi
+
+log "STEP 10: FIND URLS FROM JS AND PAGES"
 if has_script "findrecon.sh" && has_file "$SUBDOMAINS_FILE"; then
     echo "[*] Running findrecon.sh with subdomains list..."
     bash "$SCRIPT_DIR/findrecon.sh" "$SUBDOMAINS_FILE"
@@ -138,7 +163,25 @@ else
     echo "[-] findrecon.sh skipped: missing script."
 fi
 
-log "STEP 10: URL FILTER"
+if has_file "findurls.txt"; then
+    cat findurls.txt >> "$URLS_FILE"
+    echo "[+] findrecon findurls.txt appended to urls.txt"
+fi
+
+log "STEP 11: API RECON"
+if has_script "apirecon.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$KITE_WORDLIST"; then
+    echo "[*] Running apirecon.sh..."
+    bash "$SCRIPT_DIR/apirecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$KITE_WORDLIST"
+    sleep 5
+    if has_file "vulnerable_urls.txt"; then
+        cat vulnerable_urls.txt >> "$URLS_FILE"
+        echo "[+] vulnerable_urls.txt appended to urls.txt"
+    fi
+else
+    echo "[-] apirecon.sh skipped: missing script, subdomains.txt or kite wordlist."
+fi
+
+log "STEP 12: URL FILTER"
 if has_script "urlfilter.sh" && has_file "$URLS_FILE"; then
     echo "[*] Running urlfilter.sh..."
     bash "$SCRIPT_DIR/urlfilter.sh" "$URLS_FILE"
@@ -147,36 +190,13 @@ else
     echo "[-] urlfilter.sh skipped: missing script or urls.txt."
 fi
 
-log "STEP 11: CLEAN AND DEDUPLICATE URLS"
+log "STEP 13: CLEAN AND DEDUPLICATE URLS"
 if has_script "cleanurls.sh" && has_file "$URLS_FILE"; then
     echo "[*] Running cleanurls.sh..."
     bash "$SCRIPT_DIR/cleanurls.sh" "$URLS_FILE"
     sleep 3
 else
     echo "[-] cleanurls.sh skipped: missing script or urls.txt."
-fi
-
-log "STEP 12: API RECON"
-if has_script "apirecon.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$KITE_WORDLIST"; then
-    echo "[*] Running apirecon.sh..."
-    bash "$SCRIPT_DIR/apirecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$KITE_WORDLIST"
-    sleep 5
-else
-    echo "[-] apirecon.sh skipped: missing script, subdomains.txt or kite wordlist."
-fi
-
-log "STEP 13: NMAP VULNERABILITY SCAN"
-if has_script "nmapscan.sh" && has_file "$IPS_FILE"; then
-    echo "[*] Running nmapscan.sh on each IP..."
-    while IFS= read -r ip; do
-        ip=$(echo "$ip" | tr -d '[:space:]')
-        [ -z "$ip" ] && continue
-        echo "[*] Nmap scanning: $ip"
-        bash "$SCRIPT_DIR/nmapscan.sh" "$ip"
-        sleep 10
-    done < "$IPS_FILE"
-else
-    echo "[-] nmapscan.sh skipped: missing script or ips.txt."
 fi
 
 log "STEP 14: XSS SCAN"
