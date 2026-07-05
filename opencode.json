@@ -1,0 +1,78 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "deepseek": {
+      "options": {
+        "apiKey": "{env:DEEPSEEK_API_KEY}"
+      }
+    },
+    "openrouter": {
+      "options": {
+        "apiKey": "{env:OPENROUTER_API_KEY}"
+      }
+    },
+    "google": {
+      "options": {
+        "apiKey": "{env:GEMINI_API_KEY}"
+      }
+    },
+    "xai": {
+      "options": {
+        "apiKey": "{env:XAI_API_KEY}"
+      }
+    }
+  },
+  "model": "deepseek/deepseek-chat",
+  "permission": {
+    "edit": "allow",
+    "bash": {
+      "*": "allow",
+
+      "cat *": "allow", "cp *": "allow", "mv *": "allow", "mkdir *": "allow",
+      "touch *": "allow", "chmod *": "allow", "chown *": "allow", "ls *": "allow",
+      "less *": "allow", "more *": "allow", "head *": "allow", "tail *": "allow",
+      "grep *": "allow", "egrep *": "allow", "find *": "allow", "locate *": "allow",
+      "sed *": "allow", "awk *": "allow", "cut *": "allow", "sort *": "allow",
+      "uniq *": "allow", "wc *": "allow", "tr *": "allow", "xargs *": "allow",
+      "tee *": "allow", "diff *": "allow", "tar *": "allow", "zip *": "allow",
+      "unzip *": "allow", "gzip *": "allow", "gunzip *": "allow", "ps *": "allow",
+      "top *": "allow", "kill *": "allow", "df *": "allow", "du *": "allow",
+      "free *": "allow", "uname *": "allow", "whoami *": "allow", "id *": "allow",
+      "echo *": "allow", "printf *": "allow", "which *": "allow", "env *": "allow",
+      "export *": "allow", "source *": "allow", "apt *": "allow", "apt-get *": "allow",
+      "pip *": "allow", "pip3 *": "allow", "python3 *": "allow", "python *": "allow",
+      "go *": "allow", "git *": "allow", "systemctl *": "allow", "service *": "allow",
+      "crontab *": "allow", "ssh *": "allow", "scp *": "allow", "rsync *": "allow",
+      "netstat *": "allow", "ss *": "allow", "ip *": "allow", "ifconfig *": "allow",
+
+      "curl *": "allow", "wget *": "allow", "dig *": "allow", "nslookup *": "allow",
+      "whois *": "allow", "host *": "allow", "wafw00f *": "allow", "whatweb *": "allow",
+      "nmap *": "allow", "dirsearch *": "allow", "subfinder *": "allow", "httpx *": "allow",
+      "dnsx *": "allow", "nuclei *": "allow", "katana *": "allow", "ffuf *": "allow",
+      "jq *": "allow", "sqlmap *": "allow", "cmsmap *": "allow", "wpscan *": "allow",
+      "gospider *": "allow", "qsreplace *": "allow", "dalfox *": "allow", "xsstrike *": "allow",
+      "amass *": "allow", "webanalyze *": "allow", "kt *": "allow", "arjun *": "allow",
+      "secretfinder *": "allow", "assetfinder *": "allow", "linkfinder *": "allow",
+      "urlfinder *": "allow", "xnLinkFinder *": "allow", "smap *": "allow", "gau *": "allow",
+      "waybackurls *": "allow", "cf-fuzz *": "allow", "paramspider *": "allow",
+      "openredirex *": "allow", "X8 *": "allow", "knockpy *": "allow", "oralyzer *": "allow",
+      "hacktrails *": "allow", "kxss *": "allow", "curl-impersonate *": "allow",
+      "http *": "allow", "alterx *": "allow", "uro *": "allow", "smuggler *": "allow",
+      "cmseek *": "allow", "commix *": "allow", "XSpear *": "allow", "loxs *": "allow",
+      "pwnxss *": "allow", "xss_vibes *": "allow", "mantra *": "allow", "censys *": "allow",
+      "cloudflair *": "allow", "xssfinder *": "allow", "xssauto *": "allow",
+      "retire *": "allow",
+
+      "rm *": "ask",
+      "rm -rf *": "ask",
+      "mv * /dev/null": "ask",
+      "dd *": "ask",
+      "> *": "ask",
+      "truncate *": "ask",
+      "shred *": "ask",
+      "git push --force*": "ask",
+      "git reset --hard*": "ask",
+      "mkfs*": "ask"
+    }
+  }
+}
