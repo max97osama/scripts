@@ -10,7 +10,7 @@ SUBS_WORDLIST="${2:-}"
 KITE_WORDLIST="${3:-}"
 DIR_WORDLIST="${4:-}"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="/root/scripts"
 
 SUBDOMAINS_FILE="subdomains.txt"
 IPS_FILE="ips.txt"
@@ -92,20 +92,7 @@ else
     echo "[-] nmapscan.sh skipped: missing script or ips.txt."
 fi
 
-log "STEP 6: DIRECTORY AND FILE BRUTEFORCE"
-if has_script "dirrecon.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$DIR_WORDLIST"; then
-    echo "[*] Running dirrecon.sh..."
-    bash "$SCRIPT_DIR/dirrecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$DIR_WORDLIST"
-    sleep 5
-    if has_file "burl.txt"; then
-        cat burl.txt >> "$URLS_FILE"
-        echo "[+] burl.txt appended to urls.txt"
-    fi
-else
-    echo "[-] dirrecon.sh skipped: missing script, subdomains.txt or dir wordlist."
-fi
-
-log "STEP 7: URL GATHERING"
+log "STEP 6: URL GATHERING"
 if has_script "urlrecon.sh" && has_file "$SUBDOMAINS_FILE"; then
     echo "[*] Running urlrecon.sh with subdomains list..."
     bash "$SCRIPT_DIR/urlrecon.sh" "$DOMAIN" -l "$SUBDOMAINS_FILE"
@@ -116,6 +103,19 @@ elif has_script "urlrecon.sh"; then
     sleep 5
 else
     echo "[-] urlrecon.sh skipped: missing script."
+fi
+
+log "STEP 7: DIRECTORY AND FILE BRUTEFORCE"
+if has_script "dirrecon.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$DIR_WORDLIST"; then
+    echo "[*] Running dirrecon.sh..."
+    bash "$SCRIPT_DIR/dirrecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$DIR_WORDLIST"
+    sleep 5
+    if has_file "burl.txt"; then
+        cat burl.txt >> "$URLS_FILE"
+        echo "[+] burl.txt appended to urls.txt"
+    fi
+else
+    echo "[-] dirrecon.sh skipped: missing script, subdomains.txt or dir wordlist."
 fi
 
 log "STEP 8: CRAWLING"
@@ -131,26 +131,8 @@ else
     echo "[-] crawlrecon.sh skipped: missing script or dir wordlist."
 fi
 
-log "STEP 9: JS AND LINK FINDING"
-if has_script "jsrecon.sh" && has_file "$SUBDOMAINS_FILE"; then
-    echo "[*] Running jsrecon.sh with subdomains list..."
-    bash "$SCRIPT_DIR/jsrecon.sh" "$SUBDOMAINS_FILE"
-    sleep 5
-elif has_script "jsrecon.sh"; then
-    echo "[*] Running jsrecon.sh with domain only..."
-    bash "$SCRIPT_DIR/jsrecon.sh" "$DOMAIN"
-    sleep 5
-else
-    echo "[-] jsrecon.sh skipped: missing script."
-fi
 
-if has_file "findurls.txt"; then
-    cat findurls.txt >> "$JS_FILE"
-    sort -u "$JS_FILE" -o "$JS_FILE"
-    echo "[+] jsrecon findurls.txt appended to js.txt"
-fi
-
-log "STEP 10: FIND URLS FROM JS AND PAGES"
+log "STEP 9: FIND URLS FROM JS AND PAGES"
 if has_script "findrecon.sh" && has_file "$SUBDOMAINS_FILE"; then
     echo "[*] Running findrecon.sh with subdomains list..."
     bash "$SCRIPT_DIR/findrecon.sh" "$SUBDOMAINS_FILE"
@@ -168,7 +150,7 @@ if has_file "findurls.txt"; then
     echo "[+] findrecon findurls.txt appended to urls.txt"
 fi
 
-log "STEP 11: API RECON"
+log "STEP 10: API RECON"
 if has_script "apirecon.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$KITE_WORDLIST"; then
     echo "[*] Running apirecon.sh..."
     bash "$SCRIPT_DIR/apirecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$KITE_WORDLIST"
@@ -181,6 +163,15 @@ else
     echo "[-] apirecon.sh skipped: missing script, subdomains.txt or kite wordlist."
 fi
 
+log "STEP 11: CLEAN AND DEDUPLICATE URLS"
+if has_script "cleanurls.sh" && has_file "$URLS_FILE"; then
+    echo "[*] Running cleanurls.sh..."
+    bash "$SCRIPT_DIR/cleanurls.sh" "$URLS_FILE"
+    sleep 3
+else
+    echo "[-] cleanurls.sh skipped: missing script or urls.txt."
+fi
+
 log "STEP 12: URL FILTER"
 if has_script "urlfilter.sh" && has_file "$URLS_FILE"; then
     echo "[*] Running urlfilter.sh..."
@@ -190,13 +181,23 @@ else
     echo "[-] urlfilter.sh skipped: missing script or urls.txt."
 fi
 
-log "STEP 13: CLEAN AND DEDUPLICATE URLS"
-if has_script "cleanurls.sh" && has_file "$URLS_FILE"; then
-    echo "[*] Running cleanurls.sh..."
-    bash "$SCRIPT_DIR/cleanurls.sh" "$URLS_FILE"
-    sleep 3
+log "STEP 13: JS AND LINK FINDING"
+if has_script "jsrecon.sh" && has_file "$SUBDOMAINS_FILE"; then
+    echo "[*] Running jsrecon.sh with subdomains list..."
+    bash "$SCRIPT_DIR/jsrecon.sh" "$SUBDOMAINS_FILE"
+    sleep 5
+elif has_script "jsrecon.sh"; then
+    echo "[*] Running jsrecon.sh with domain only..."
+    bash "$SCRIPT_DIR/jsrecon.sh" "$DOMAIN"
+    sleep 5
 else
-    echo "[-] cleanurls.sh skipped: missing script or urls.txt."
+    echo "[-] jsrecon.sh skipped: missing script."
+fi
+
+if has_file "findurls.txt"; then
+    cat findurls.txt >> "$JS_FILE"
+    sort -u "$JS_FILE" -o "$JS_FILE"
+    echo "[+] jsrecon findurls.txt appended to js.txt"
 fi
 
 log "STEP 14: XSS SCAN"

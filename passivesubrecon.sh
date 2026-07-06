@@ -1,12 +1,14 @@
 #!/bin/bash
 
-if [ "$#" -lt 2 ]; then
-    echo "Usage: $0 <domain> <subdomains.txt>"
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <domain> [subdomains.txt]"
     exit 1
 fi
 
 DOMAIN="$1"
-SUBDOMAINS_FILE="$2"
+SUBDOMAINS_FILE="${2:-subdomains.txt}"
+
+touch "$SUBDOMAINS_FILE"
 
 SUBS_OUT="subs.txt"
 CLEANED_OUT="cleanedsubs.txt"
