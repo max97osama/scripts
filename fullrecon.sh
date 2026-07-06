@@ -1,7 +1,10 @@
 #!/bin/bash
 
 if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <domain> [subdomains_wordlist.txt] [kite_wordlist] [dir_wordlist.txt]"
+    echo "Usage: $0 <domain> [subdomains_wordlist.txt] [kite_wordlist] [dir_wordlist.txt]
+    
+    example wordlists :
+      /root/wordlist/shorts/subdomains.txt /root/wordlist/large.kite /root/wordlist/shorts/dir.txt"
     exit 1
 fi
 
