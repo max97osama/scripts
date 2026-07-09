@@ -1,10 +1,7 @@
 #!/bin/bash
 
 if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <domain> [subdomains_wordlist.txt] [kite_wordlist] [dir_wordlist.txt]
-    
-    example wordlists :
-      /root/wordlist/shorts/subdomains.txt /root/wordlist/large.kite /root/wordlist/shorts/dir.txt"
+    echo "Usage: $0 <domain> [subdomains_wordlist.txt] [kite_wordlist] [dir_wordlist.txt]"
     exit 1
 fi
 
@@ -156,8 +153,7 @@ fi
 log "STEP 10: API RECON"
 if has_script "apirecon.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$KITE_WORDLIST"; then
     echo "[*] Running apirecon.sh..."
-    bash "$SCRIPT_DIR/apirecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$KITE_WORDLIST"
-    sleep 5
+    bash "$SCRIPT_DIR/apirecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$KITE_WORDLIST"    sleep 5
     if has_file "vulnerable_urls.txt"; then
         cat vulnerable_urls.txt >> "$URLS_FILE"
         echo "[+] vulnerable_urls.txt appended to urls.txt"
@@ -225,8 +221,7 @@ log "FULL RECON COMPLETE"
 
 echo ""
 echo "[+] Output files summary:"
-for f in subdomains.txt activesubs.txt ips.txt urls.txt curls.txt findurls.txt \
-          burl.txt parameters.txt js.txt tech.txt vulnerable_urls.txt report.txt \
+for f in subdomains.txt activesubs.txt ips.txt urls.txt curls.txt findurls.txt \          burl.txt parameters.txt js.txt tech.txt vulnerable_urls.txt report.txt \
           nmapreport.txt subs.txt cleanedsubs.txt validsubs.txt; do
     if has_file "$f"; then
         echo "    $f — $(wc -l < "$f") lines"
