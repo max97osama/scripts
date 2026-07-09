@@ -1,7 +1,10 @@
 #!/bin/bash
 
 if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <domain> [subdomains_wordlist.txt] [kite_wordlist] [dir_wordlist.txt]"
+    echo "Usage: $0 <domain> [subdomains_wordlist.txt] [kite_wordlist] [dir_wordlist.txt]
+    
+    example wordlists :
+      /root/wordlist/shorts/subdomains.txt /root/wordlist/large.kite /root/wordlist/shorts/dir.txt"
     exit 1
 fi
 
@@ -153,7 +156,8 @@ fi
 log "STEP 10: API RECON"
 if has_script "apirecon.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$KITE_WORDLIST"; then
     echo "[*] Running apirecon.sh..."
-    bash "$SCRIPT_DIR/apirecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$KITE_WORDLIST"    sleep 5
+    bash "$SCRIPT_DIR/apirecon.sh" "$DOMAIN" "$SUBDOMAINS_FILE" "$KITE_WORDLIST"
+    sleep 5
     if has_file "vulnerable_urls.txt"; then
         cat vulnerable_urls.txt >> "$URLS_FILE"
         echo "[+] vulnerable_urls.txt appended to urls.txt"
@@ -217,12 +221,32 @@ else
     echo "[-] sqlrecon.sh skipped: missing script or parameters.txt."
 fi
 
+log "STEP 16: COMMAND INJECTION SCAN"
+if has_script "commixrecon.sh" && has_file "parameters.txt"; then
+    echo "[*] Running cmdirecon.sh on parameters.txt..."
+    bash "$SCRIPT_DIR/commixrecon.sh" "parameters.txt"
+    sleep 5
+else
+    echo "[-] commixrecon.sh skipped: missing script or parameters.txt."
+fi
+
+log "STEP 17: HTTP REQUEST SMUGGLING SCAN"
+if has_script "smugglerrecon.sh" && has_file "$SUBDOMAINS_FILE"; then
+    echo "[*] Running smugglerrecon.sh on subdomains.txt..."
+    bash "$SCRIPT_DIR/smugglerrecon.sh" "$SUBDOMAINS_FILE"
+    sleep 5
+else
+    echo "[-] smugglerrecon.sh skipped: missing script or subdomains.txt."
+fi
+
 log "FULL RECON COMPLETE"
 
 echo ""
 echo "[+] Output files summary:"
-for f in subdomains.txt activesubs.txt ips.txt urls.txt curls.txt findurls.txt \          burl.txt parameters.txt js.txt tech.txt vulnerable_urls.txt report.txt \
-          nmapreport.txt subs.txt cleanedsubs.txt validsubs.txt; do
+for f in subdomains.txt activesubs.txt ips.txt ipsv6.txt urls.txt curls.txt findurls.txt \
+          burl.txt parameters.txt js.txt tech.txt vulnerable_urls.txt report.txt \
+          nmapreport.txt subs.txt cleanedsubs.txt validsubs.txt xssreport.txt \
+          sqlreport.txt cmdireport.txt smugglerreport.txt secretsreport.txt karmareport.txt; do
     if has_file "$f"; then
         echo "    $f — $(wc -l < "$f") lines"
     fi
