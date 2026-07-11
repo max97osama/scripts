@@ -26,28 +26,35 @@ fi
 
 sort -u "$DOMAINS_LIST" -o "$DOMAINS_LIST"
 
-echo "[*] Total domains to process: $(wc -l < "$DOMAINS_LIST")"
+TOTAL_DOMAINS=$(wc -l < "$DOMAINS_LIST")
+WORDLIST_LINES=$(wc -l < "$WORDLIST")
+
+echo "[*] Total domains to process: $TOTAL_DOMAINS"
+echo "[*] Wordlist size: $WORDLIST_LINES lines"
+
+FFUF_RATE=20
+FFUF_THREADS=3
+FFUF_MAXTIME_PER_DOMAIN=1800
+
+ESTIMATED_SECONDS=$(( WORDLIST_LINES / FFUF_RATE ))
+if [ "$ESTIMATED_SECONDS" -gt "$FFUF_MAXTIME_PER_DOMAIN" ]; then
+    echo "[!] Wordlist would take ~$((ESTIMATED_SECONDS / 60)) minutes per domain at current rate."
+    echo "[!] Capping each domain's ffuf run to $((FFUF_MAXTIME_PER_DOMAIN / 60)) minutes with -maxtime."
+fi
 
 SUBS_OUT="subs.txt"
 CLEANED_OUT="cleanedsubs.txt"
-IPS_OUT="ips.txt"
 VALID_OUT="validsubs.txt"
 
-touch "$SUBS_OUT" "$CLEANED_OUT" "$IPS_OUT" "$VALID_OUT"
+touch "$SUBS_OUT" "$CLEANED_OUT" "$VALID_OUT"
 
 FFUF_OUT="/tmp/ffuf_subs_$$.txt"
 KNOCK_OUT="/tmp/knock_subs_$$.txt"
 ALTERX_OUT="/tmp/alterx_subs_$$.txt"
 ALL_RAW="/tmp/all_raw_$$.txt"
-RESOLVED="/tmp/resolved_$$.txt"
 FFUF_JSON="/tmp/ffuf_raw_$$.json"
-HTTPX_OUT="/tmp/httpx_$$.txt"
-DNSX_OUT="/tmp/dnsx_$$.txt"
 
 > "$ALL_RAW"
-> "$RESOLVED"
-> "$HTTPX_OUT"
-> "$DNSX_OUT"
 
 while IFS= read -r DOMAIN; do
     echo "[*] Starting subdomain bruteforce for: $DOMAIN"
@@ -56,12 +63,14 @@ while IFS= read -r DOMAIN; do
     > "$KNOCK_OUT"
     > "$ALTERX_OUT"
 
-    echo "[*] Running ffuf subdomain bruteforce on $DOMAIN..."
-    ffuf -u "https://FUZZ.$DOMAIN" \
+    echo "[*] Running ffuf subdomain bruteforce on $DOMAIN (rate=$FFUF_RATE, threads=$FFUF_THREADS, maxtime=${FFUF_MAXTIME_PER_DOMAIN}s)..."
+    timeout $((FFUF_MAXTIME_PER_DOMAIN + 60)) ffuf -u "https://FUZZ.$DOMAIN" \
         -w "$WORDLIST" \
-        -t 1 \
-        -rate 5 \
-        -timeout 10 \
+        -t "$FFUF_THREADS" \
+        -rate "$FFUF_RATE" \
+        -timeout 5 \
+        -maxtime "$FFUF_MAXTIME_PER_DOMAIN" \
+        -se \
         -mc 200,301,302,403 \
         -o "$FFUF_JSON" \
         -of json \
@@ -78,26 +87,28 @@ for r in data.get('results', []):
         print(f'{host}.$DOMAIN')
 " > "$FFUF_OUT" 2>/dev/null
         rm -f "$FFUF_JSON"
+    else
+        echo "[-] ffuf produced no output for $DOMAIN (timed out or found nothing)."
     fi
 
-    sleep 5
+    sleep 3
 
     echo "[*] Running knockpy on $DOMAIN..."
-    knockpy "$DOMAIN" --recon --no-http 2>/dev/null | \
+    timeout 300 knockpy "$DOMAIN" --recon --no-http 2>/dev/null | \
         grep -oE "[a-zA-Z0-9._-]+\.$DOMAIN" > "$KNOCK_OUT"
 
-    sleep 5
+    sleep 3
 
     echo "[*] Running alterx permutation on $DOMAIN..."
     grep "$DOMAIN" "$SUBDOMAINS_FILE" 2>/dev/null > /tmp/bs_domain_subs_$$.txt
     if [ -s /tmp/bs_domain_subs_$$.txt ]; then
-        alterx -l /tmp/bs_domain_subs_$$.txt \
+        timeout 120 alterx -l /tmp/bs_domain_subs_$$.txt \
             -o "$ALTERX_OUT" \
             -enrich 2>/dev/null
     fi
     rm -f /tmp/bs_domain_subs_$$.txt
 
-    sleep 3
+    sleep 2
 
     echo "[*] Merging candidates for $DOMAIN..."
     cat "$SUBDOMAINS_FILE" "$FFUF_OUT" "$KNOCK_OUT" "$ALTERX_OUT" 2>/dev/null | \
@@ -105,122 +116,23 @@ for r in data.get('results', []):
         grep "$DOMAIN" | \
         sort -u >> "$ALL_RAW"
 
-    sleep 2
-
 done < "$DOMAINS_LIST"
 
 sort -u "$ALL_RAW" -o "$ALL_RAW"
 
 echo "[*] Total unique candidates across all domains: $(wc -l < "$ALL_RAW")"
 
-echo "[*] Resolving with dnsx..."
-dnsx -l "$ALL_RAW" \
-    -t 1 \
-    -rl 5 \
-    -o "$RESOLVED" \
-    -silent 2>/dev/null
+NEW_CANDIDATES=$(comm -23 "$ALL_RAW" <(sort -u "$SUBDOMAINS_FILE"))
+NEW_COUNT=$(echo "$NEW_CANDIDATES" | grep -c ".")
 
-echo "[*] Running dnsx for IP and hostname info..."
-dnsx -l "$RESOLVED" \
-    -t 1 \
-    -rl 5 \
-    -a \
-    -resp \
-    -silent \
-    2>/dev/null > "$DNSX_OUT"
-
-sleep 3
-
-echo "[*] Running httpx for status codes..."
-httpx -l "$RESOLVED" \
-    -threads 1 \
-    -rate-limit 5 \
-    -timeout 10 \
-    -status-code \
-    -silent \
-    2>/dev/null > "$HTTPX_OUT"
-
-sleep 3
-
-echo "[*] Building output files..."
-
-python3 - <<PYEOF
-import re
-
-ipv4_pat = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
-
-httpx_map = {}
-with open('$HTTPX_OUT', 'r') as f:
-    for line in f:
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split()
-        if len(parts) >= 2:
-            url = parts[0].replace('https://','').replace('http://','').rstrip('/')
-            code = parts[1].strip('[]')
-            httpx_map[url] = code
-
-dnsx_map = {}
-with open('$DNSX_OUT', 'r') as f:
-    for line in f:
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split()
-        if not parts:
-            continue
-        sub = parts[0]
-        bracket_vals = re.findall(r'\[([^\]]+)\]', line)
-        ip = '0.0.0.0'
-        for val in bracket_vals:
-            if ipv4_pat.match(val):
-                ip = val
-                break
-        dnsx_map[sub] = ip
-
-with open('$RESOLVED', 'r') as f:
-    subs = [line.strip() for line in f if line.strip()]
-
-subs_out = open('$SUBS_OUT', 'a')
-cleaned_out = open('$CLEANED_OUT', 'a')
-ips_out = open('$IPS_OUT', 'a')
-valid_out = open('$VALID_OUT', 'a')
-
-all_ips = set()
-
-for sub in subs:
-    code = httpx_map.get(sub, 'N/A')
-    ip = dnsx_map.get(sub, '0.0.0.0')
-    status_text = 'OK' if code == '200' else code
-    subs_out.write(f'{sub} {code} {status_text} {ip} {sub}\n')
-    cleaned_out.write(f'{sub}\n')
-    if ip != '0.0.0.0':
-        all_ips.add(ip)
-    if code == '200':
-        valid_out.write(f'{sub}\n')
-
-for ip in sorted(all_ips):
-    ips_out.write(f'{ip}\n')
-
-subs_out.close()
-cleaned_out.close()
-ips_out.close()
-valid_out.close()
-
-print(f'[+] subs.txt new entries: {len(subs)}')
-print(f'[+] validsubs.txt new 200 OK entries: {sum(1 for s in subs if httpx_map.get(s,"") == "200")}')
-print(f'[+] ips.txt new unique IPs: {len(all_ips)}')
-PYEOF
-
-NEW=$(comm -23 <(sort "$CLEANED_OUT" | uniq) <(sort "$SUBDOMAINS_FILE"))
-NEW_COUNT=$(echo "$NEW" | grep -c ".")
-
-echo "$NEW" >> "$SUBDOMAINS_FILE"
+echo "$NEW_CANDIDATES" >> "$SUBDOMAINS_FILE"
 sort -u "$SUBDOMAINS_FILE" -o "$SUBDOMAINS_FILE"
 
-echo "[+] $NEW_COUNT new subdomains added to $SUBDOMAINS_FILE"
-echo "[+] Output files: $SUBS_OUT | $CLEANED_OUT | $IPS_OUT | $VALID_OUT"
+echo "$NEW_CANDIDATES" >> "$CLEANED_OUT"
+sort -u "$CLEANED_OUT" -o "$CLEANED_OUT"
 
-rm -f "$FFUF_OUT" "$KNOCK_OUT" "$ALTERX_OUT" "$ALL_RAW" "$RESOLVED" \
-    "$HTTPX_OUT" "$DNSX_OUT" "$DOMAINS_LIST"
+echo "[+] $NEW_COUNT new subdomains added to $SUBDOMAINS_FILE"
+echo "[+] brutesubrecon does not resolve/probe here — run iprecon.sh next to resolve IPs and check alive status."
+echo "[+] Output files: $CLEANED_OUT appended, $SUBDOMAINS_FILE appended"
+
+rm -f "$FFUF_OUT" "$KNOCK_OUT" "$ALTERX_OUT" "$ALL_RAW" "$DOMAINS_LIST"

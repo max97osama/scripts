@@ -18,19 +18,6 @@ while IFS= read -r url; do
     fi
 done < "$INPUT"
 
-while IFS= read -r furl; do
-    [ -z "$furl" ] && continue
-
-    ORALYZER_OUT=$(oralyzer -u "$furl" 2>/dev/null)
-    if echo "$ORALYZER_OUT" | grep -qiE "vulnerable|possible open redirect"; then
-        echo "URL: $furl" >> "$SQLREPORT"
-        echo "Vulnerability: Open Redirect" >> "$SQLREPORT"
-        echo "$ORALYZER_OUT" | grep -iE "vulnerable|payload|redirect" >> "$SQLREPORT"
-        echo "Exploit: Replace the FUZZ parameter with an attacker controlled URL (e.g. https://evil.com) to redirect victims after authentication" >> "$SQLREPORT"
-        echo "" >> "$SQLREPORT"
-    fi
-done < <(qsreplace "FUZZ" < "$INPUT")
-
 CRLF_OUT=$(crlfuzz -l "$INPUT" -s 2>/dev/null)
 if [ -n "$CRLF_OUT" ]; then
     echo "$CRLF_OUT" | while IFS= read -r curl_url; do

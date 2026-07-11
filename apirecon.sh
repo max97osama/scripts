@@ -43,17 +43,6 @@ log "================================================================"
 
 log ""
 log "================================================================"
-log "ASSETFINDER"
-log "================================================================"
-
-assetfinder --subs-only "$DOMAIN" > /tmp/assetfinder_$$.txt 2>/dev/null
-cat /tmp/assetfinder_$$.txt >> "$REPORT"
-log "[+] Assetfinder found $(wc -l < /tmp/assetfinder_$$.txt) assets"
-
-sleep 5
-
-log ""
-log "================================================================"
 log "KITERUNNER"
 log "================================================================"
 
@@ -100,47 +89,6 @@ while IFS= read -r TARGET; do
 
     sleep 8
 done < "$TARGETS"
-
-sleep 5
-
-log ""
-log "================================================================"
-log "LINKFINDER"
-log "================================================================"
-
-while IFS= read -r TARGET; do
-    log "[*] Linkfinder scanning: $TARGET"
-    python3 /usr/local/bin/LinkFinder/linkfinder.py \
-        -i "$TARGET" \
-        -d \
-        -o cli \
-        2>/dev/null | tee -a /tmp/linkfinder_$$.txt >> "$REPORT"
-    sleep 8
-done < "$TARGETS"
-
-grep -E "^http|^/" /tmp/linkfinder_$$.txt 2>/dev/null | \
-    grep -iE "admin|api|upload|config|backup|debug|test|dev|secret|key|token|login|auth|passwd|password|\.env|\.git|\.sql|\.bak" \
-    >> "$VULN_URLS"
-
-sleep 5
-
-log ""
-log "================================================================"
-log "SECRETFINDER"
-log "================================================================"
-
-while IFS= read -r TARGET; do
-    log "[*] SecretFinder scanning: $TARGET"
-    python3 /usr/local/bin/SecretFinder/SecretFinder.py \
-        -i "$TARGET" \
-        -e \
-        -o cli \
-        2>/dev/null | tee -a /tmp/secretfinder_$$.txt >> "$REPORT"
-    sleep 8
-done < "$TARGETS"
-
-grep -iE "api_key|secret|token|password|aws|private|auth|bearer|jwt" \
-    /tmp/secretfinder_$$.txt 2>/dev/null >> "$VULN_URLS"
 
 sleep 5
 
@@ -237,7 +185,7 @@ log "[+] Vulnerable/interesting URLs found: $(wc -l < "$VULN_URLS")"
 log "[+] Vulnerable URLs saved to: $VULN_URLS"
 log "[+] Full report saved to: $REPORT"
 
-rm -f "$TARGETS" /tmp/assetfinder_$$.txt /tmp/kite_$$.txt \
-    /tmp/arjun_all_$$.txt /tmp/linkfinder_$$.txt /tmp/secretfinder_$$.txt \
+rm -f "$TARGETS" /tmp/kite_$$.txt \
+    /tmp/arjun_all_$$.txt \
     /tmp/param_urls_$$.txt /tmp/qsreplace_$$.txt /tmp/oralyzer_$$.txt \
     /tmp/openredirex_urls_$$.txt /tmp/openredirex_$$.txt

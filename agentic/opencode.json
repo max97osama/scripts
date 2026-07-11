@@ -72,7 +72,9 @@
       "shred *": "ask",
       "git push --force*": "ask",
       "git reset --hard*": "ask",
-      "mkfs*": "ask"
+      "mkfs*": "ask",   
+      "msfconsole *": "ask",
+      "msfvenom *": "ask"
     }
   }
 }
