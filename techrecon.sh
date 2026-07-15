@@ -7,6 +7,7 @@ fi
 
 INPUT="$1"
 TECH_OUT="tech.txt"
+TECHSTACK_OUT="techstack.txt"
 RAW_ALL="/tmp/tech_raw_$$.txt"
 TARGETS="/tmp/tech_targets_$$.txt"
 HTTP_TARGETS="/tmp/tech_http_$$.txt"
@@ -16,6 +17,7 @@ HTTP_TARGETS="/tmp/tech_http_$$.txt"
 > "$HTTP_TARGETS"
 
 touch "$TECH_OUT"
+touch "$TECHSTACK_OUT"
 
 while IFS= read -r line; do
     line=$(echo "$line" | tr -d '[:space:]')
@@ -37,14 +39,22 @@ while IFS= read -r TARGET; do
     echo "[*] Nmap scanning: $TARGET"
 
     echo "=== NMAP: $TARGET ===" >> "$RAW_ALL"
-    nmap -sV -sC \
-        -T2 \
+    timeout 900 nmap -sV -sC -O --osscan-guess \
+        -T3 \
+        -n \
         -p 21,22,23,25,53,67,68,69,80,110,139,143,161,162,443,445,465,587,853,993,995,1433,1521,2049,2181,2375,2376,2379,2380,3000,3100,3306,3389,4243,4444,4848,5432,5601,5672,5900,5901,5984,6379,6443,7070,7474,7990,8000,8008,8080,8086,8088,8090,8443,8888,9000,9090,9092,9100,9200,9300,10250,10255,11211,15672,27017,27018,50000 \
         --min-rate 100 \
         --max-rate 200 \
+        --host-timeout 12m \
+        --script-timeout 45s \
         --script banner,http-server-header,http-generator,http-title,http-auth-finder,http-headers,ssh-hostkey,ftp-anon,ssl-cert,http-robots.txt,snmp-info,smb-os-discovery,redis-info,mongodb-info,mysql-info,ms-sql-info \
         -oN /tmp/nmap_tech_$$.txt \
         "$TARGET" 2>/dev/null
+
+    if [ $? -eq 124 ]; then
+        echo "[!] $TARGET nmap scan hit 15-minute limit, killed"
+    fi
+
     cat /tmp/nmap_tech_$$.txt >> "$RAW_ALL"
     rm -f /tmp/nmap_tech_$$.txt
 
@@ -59,7 +69,7 @@ while IFS= read -r TARGET; do
     echo "[*] Web scanning: $TARGET"
 
     echo "=== WHATWEB: $TARGET ===" >> "$RAW_ALL"
-    whatweb "$TARGET" \
+    timeout 30 whatweb "$TARGET" \
         --color=never \
         -a 1 \
         2>/dev/null >> "$RAW_ALL"
@@ -67,7 +77,7 @@ while IFS= read -r TARGET; do
     sleep 5
 
     echo "=== WEBANALYZE: $TARGET ===" >> "$RAW_ALL"
-    webanalyze -host "$TARGET" \
+    timeout 30 webanalyze -host "$TARGET" \
         -crawl 1 \
         2>/dev/null >> "$RAW_ALL"
 
@@ -82,7 +92,7 @@ while IFS= read -r TARGET; do
     sleep 3
 
     echo "=== WAFW00F: $TARGET ===" >> "$RAW_ALL"
-    wafw00f "$TARGET" \
+    timeout 30 wafw00f "$TARGET" \
         2>/dev/null >> "$RAW_ALL"
 
     sleep 5
@@ -101,7 +111,7 @@ while IFS= read -r TARGET; do
     sleep 5
 
     echo "=== CMSEEK: $TARGET ===" >> "$RAW_ALL"
-    CMSEEK_OUT=$(cmseek -u "$TARGET" \
+    CMSEEK_OUT=$(timeout 60 cmseek -u "$TARGET" \
         --follow-redirect \
         -r \
         2>/dev/null)
@@ -114,7 +124,7 @@ while IFS= read -r TARGET; do
         echo "other $CMS_NAME $TARGET" >> "$CMS_DETECTED_FILE"
     fi
 
-    WHATWEB_OUT=$(whatweb "$TARGET" --color=never -a 1 2>/dev/null)
+    WHATWEB_OUT=$(timeout 30 whatweb "$TARGET" --color=never -a 1 2>/dev/null)
     if [ -z "$(grep "wordpress $TARGET" "$CMS_DETECTED_FILE" 2>/dev/null)" ]; then
         if echo "$WHATWEB_OUT" | grep -qi "wordpress"; then
             echo "wordpress $TARGET" >> "$CMS_DETECTED_FILE"
@@ -133,7 +143,7 @@ while IFS= read -r cms_line; do
     if [ "$CMS_TYPE" = "wordpress" ]; then
         echo "[*] WordPress detected on $TARGET - running wpscan..."
         echo "=== WPSCAN: $TARGET ===" >> "$RAW_ALL"
-        wpscan --url "$TARGET" \
+        timeout 300 wpscan --url "$TARGET" \
             --no-banner \
             --disable-tls-checks \
             --throttle 2000 \
@@ -145,7 +155,7 @@ while IFS= read -r cms_line; do
     elif [ "$CMS_TYPE" = "other" ]; then
         echo "[*] $CMS_NAME detected on $TARGET - running cmsmap..."
         echo "=== CMSMAP ($CMS_NAME): $TARGET ===" >> "$RAW_ALL"
-        cmsmap "$TARGET" \
+        timeout 180 cmsmap "$TARGET" \
             -t 1 \
             2>/dev/null >> "$RAW_ALL"
         sleep 10
@@ -153,10 +163,11 @@ while IFS= read -r cms_line; do
 
 done < "$CMS_DETECTED_FILE"
 
-echo "[*] Building tech.txt..."
+echo "[*] Building tech.txt and techstack.txt..."
 
 python3 - <<PYEOF
 import re
+from datetime import datetime
 
 PORT_TOOLS = {
     "21":    ("FTP", "vsftpd / ProFTPD / FileZilla Server"),
@@ -330,11 +341,90 @@ with open('$TECH_OUT', 'a') as out:
             out.write(f'{line}\n')
             total += 1
 
+os_by_target = {}
+os_pattern = re.compile(r'(OS details:|Running:|Aggressive OS guesses:|OS CPE:)\s*(.+)')
+target_marker = re.compile(r'===\s+NMAP:\s+(\S+)\s+===')
+
+current_target = None
+for line in content.splitlines():
+    tmatch = target_marker.match(line.strip())
+    if tmatch:
+        current_target = tmatch.group(1)
+        continue
+    omatch = os_pattern.search(line)
+    if omatch and current_target:
+        label, value = omatch.groups()
+        os_by_target.setdefault(current_target, [])
+        entry = f"{label} {value.strip()}"
+        if entry not in os_by_target[current_target]:
+            os_by_target[current_target].append(entry)
+
+confirmed_tech_pattern = re.compile(
+    r'\b([A-Za-z][A-Za-z0-9_.+-]{1,30})[\[/]v?(\d+(?:\.\d+){0,3}[a-zA-Z0-9]*)\]?'
+)
+
+confirmed_by_target = {}
+current_target = None
+for line in content.splitlines():
+    tmatch = re.match(r'===\s+\w[\w\s]*:\s+(\S+)\s+===', line.strip())
+    if tmatch:
+        current_target = tmatch.group(1)
+        continue
+    if current_target is None:
+        continue
+    for m in confirmed_tech_pattern.finditer(line):
+        name, version = m.groups()
+        if name.lower() in ('http', 'https', 'tcp', 'udp', 'cve'):
+            continue
+        confirmed_by_target.setdefault(current_target, set())
+        confirmed_by_target[current_target].add(f"{name} {version}")
+
+with open('$TECHSTACK_OUT', 'a') as out:
+    out.write('================================================================\n')
+    out.write('TECH STACK SUMMARY\n')
+    out.write(f'Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n')
+    out.write('================================================================\n\n')
+
+    out.write('OS DETECTION\n')
+    out.write('------------\n')
+    if os_by_target:
+        for target, entries in os_by_target.items():
+            out.write(f'\nTarget: {target}\n')
+            for e in entries:
+                out.write(f'  {e}\n')
+    else:
+        out.write('No OS details confirmed by nmap on any target.\n')
+    out.write('\n')
+
+    out.write('CONFIRMED TOOLS/VERSIONS\n')
+    out.write('------------------------\n')
+    if confirmed_by_target:
+        for target, entries in confirmed_by_target.items():
+            out.write(f'\nTarget: {target}\n')
+            for e in sorted(entries):
+                out.write(f'  {e}\n')
+    else:
+        out.write('No confirmed tool versions extracted.\n')
+    out.write('\n')
+
+    out.write('POSSIBLE (PORT-INFERRED, UNCONFIRMED)\n')
+    out.write('--------------------------------------\n')
+    if port_findings_by_target:
+        for target, entries in port_findings_by_target.items():
+            out.write(f'\nTarget: {target}\n')
+            for entry in entries:
+                out.write(f'{entry}\n')
+    else:
+        out.write('No port-based candidates identified.\n')
+    out.write('\n')
+
 print(f'[+] Port-based detections for {len(port_findings_by_target)} targets')
-print(f'[+] tech.txt findings written: {total}')
+print(f'[+] tech.txt findings written')
+print(f'[+] techstack.txt written')
 PYEOF
 
 echo "[+] Done."
 echo "[+] tech.txt total lines: $(wc -l < "$TECH_OUT")"
+echo "[+] techstack.txt total lines: $(wc -l < "$TECHSTACK_OUT")"
 
 rm -f "$RAW_ALL" "$TARGETS" "$HTTP_TARGETS" "$CMS_DETECTED_FILE" /tmp/nmap_tech_$$.txt

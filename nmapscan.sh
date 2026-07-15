@@ -7,6 +7,7 @@ fi
 
 TARGET="$1"
 REPORT="nmapreport.txt"
+NET_REPORT="network.txt"
 RAW_OUT="/tmp/nmap_raw_$$.txt"
 
 > "$REPORT"
@@ -14,25 +15,37 @@ RAW_OUT="/tmp/nmap_raw_$$.txt"
 echo "[*] Starting full nmap vulnerability scan on: $TARGET"
 echo "[*] This will take a while..."
 
-nmap -sV -sC \
+timeout 2700 nmap -sV -sC \
     --script vuln \
     -p- \
-    -T2 \
+    -T3 \
+    -n \
     --min-rate 100 \
     --max-rate 300 \
     --max-retries 2 \
-    --host-timeout 60m \
+    --host-timeout 25m \
+    --script-timeout 90s \
+    --stats-every 60s \
     -oN "$RAW_OUT" \
     "$TARGET" 2>/dev/null
+
+NMAP_EXIT=$?
 
 if [ ! -f "$RAW_OUT" ]; then
     echo "[-] Nmap failed to run or produced no output."
     exit 1
 fi
 
+if [ "$NMAP_EXIT" -eq 124 ]; then
+    echo "[!] Scan hit the 45-minute hard limit and was terminated early. Results may be partial."
+fi
+
 echo "================================================================" >> "$REPORT"
 echo "NMAP VULNERABILITY REPORT FOR: $TARGET" >> "$REPORT"
 echo "Date: $(date)" >> "$REPORT"
+if [ "$NMAP_EXIT" -eq 124 ]; then
+    echo "NOTE: Scan was terminated at the 45-minute hard limit. Results may be partial." >> "$REPORT"
+fi
 echo "================================================================" >> "$REPORT"
 echo "" >> "$REPORT"
 
@@ -84,8 +97,102 @@ with open(report_file, 'a') as out:
         out.write('================================================================\n')
 PYEOF
 
+python3 - <<PYEOF "$RAW_OUT" "$NET_REPORT" "$TARGET"
+import sys, re
+from datetime import datetime
+
+raw_file = sys.argv[1]
+net_file = sys.argv[2]
+target = sys.argv[3]
+
+with open(raw_file, 'r', errors='ignore') as f:
+    content = f.read()
+
+RISKY = {
+    'ftp': 'Anonymous FTP access or credential sniffing risk',
+    'telnet': 'Cleartext credentials, should not be exposed',
+    'snmp': 'Information disclosure of OS/hardware/network details',
+    'smb': 'Check for EternalBlue / SMB relay exposure',
+    'rdp': 'Check for BlueKeep and brute-force exposure',
+    'redis': 'Often unauthenticated, can lead to RCE',
+    'mongodb': 'Often unauthenticated, full DB read/write risk',
+    'elasticsearch': 'Often unauthenticated, full data dump risk',
+    'memcached': 'Unauthenticated access, DDoS amplification risk',
+    'docker': 'Unauthenticated Docker API, full container takeover risk',
+    'vnc': 'Check for no-auth remote desktop access',
+    'mysql': 'Check for weak/default credentials',
+    'postgresql': 'Check for weak/default credentials',
+    'http-proxy': 'Open proxy misuse risk',
+}
+
+open_ports = []
+port_pattern = re.compile(r'^(\d+)/(tcp|udp)\s+(open)\s+(\S+)\s*(.*)$', re.MULTILINE)
+for m in port_pattern.finditer(content):
+    port, proto, state, service, version = m.groups()
+    open_ports.append((port, proto, service.strip(), version.strip()))
+
+confirmed_vulns = []
+blocks = re.split(r'\n(?=\| |\|_)', content)
+current_script = None
+for block in blocks:
+    header_match = re.match(r'\|_?\s*([\w\-\.]+):', block)
+    if header_match:
+        current_script = header_match.group(1)
+    if 'State: VULNERABLE' in block:
+        prior_text = block.split('State: VULNERABLE')[0]
+        last_line = prior_text.strip().split('\n')[-1] if prior_text.strip() else ''
+        if 'LIKELY' in last_line:
+            continue
+        cve_matches = re.findall(r'CVE-\d{4}-\d+', block)
+        title_match = re.search(r'\|\s+(.+)\n\s*\|\s+VULNERABLE', block)
+        title = title_match.group(1).strip() if title_match else (current_script or 'Unknown')
+        cve_str = ', '.join(sorted(set(cve_matches))) if cve_matches else 'No CVE listed'
+        confirmed_vulns.append(f"{title} -- {cve_str}")
+
+with open(net_file, 'a') as out:
+    out.write('================================================================\n')
+    out.write(f'NETWORK SUMMARY FOR: {target}\n')
+    out.write(f'Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n')
+    out.write('================================================================\n\n')
+
+    out.write('OPEN PORTS\n')
+    out.write('----------\n')
+    if open_ports:
+        for port, proto, service, version in open_ports:
+            line = f"{port}/{proto}  {service}"
+            if version:
+                line += f"  {version}"
+            out.write(line + '\n')
+    else:
+        out.write('No open ports found.\n')
+    out.write('\n')
+
+    out.write('POTENTIAL THREATS\n')
+    out.write('-----------------\n')
+    threat_found = False
+    for port, proto, service, version in open_ports:
+        service_lower = service.lower()
+        for keyword, note in RISKY.items():
+            if keyword in service_lower:
+                out.write(f"{port}/{proto} ({service}): {note}\n")
+                threat_found = True
+    if not threat_found:
+        out.write('No high-risk services identified by service name.\n')
+    out.write('\n')
+
+    out.write('CONFIRMED VULNERABILITIES\n')
+    out.write('-------------------------\n')
+    if confirmed_vulns:
+        for v in confirmed_vulns:
+            out.write(f"{v}\n")
+    else:
+        out.write('No confirmed (State: VULNERABLE) findings from nmap vuln scripts.\n')
+    out.write('\n')
+PYEOF
+
 echo "[+] Done."
-echo "[+] Vulnerability report saved to: $REPORT"
-echo "[+] Total lines in report: $(wc -l < "$REPORT")"
+echo "[+] Full vulnerability report saved to: $REPORT"
+echo "[+] Short network report saved to: $NET_REPORT"
+echo "[+] Total lines in full report: $(wc -l < "$REPORT")"
 
 rm -f "$RAW_OUT"
