@@ -203,6 +203,25 @@ if has_file "findurls.txt"; then
     echo "[+] jsrecon findurls.txt appended to js.txt"
 fi
 
+log "STEP EXTRA: URL AND JS FILTER  AND LINK FINDING"
+if has_script "reconfilter.sh" && has_file "$SUBDOMAINS_FILE" && has_file "$URLS_FILE"; then
+    echo "[*] Running reconfilter.sh with subdomains list..."
+    bash "$SCRIPT_DIR/reconfilter.sh" "$SUBDOMAINS_FILE"
+    sleep 5
+elif has_script "reconfilter.sh"; then
+    echo "[*] Running reconfilter.sh with domain only..."
+    bash "$SCRIPT_DIR/reconfilter.sh" "$DOMAIN"
+    sleep 5
+else
+    echo "[-] reconfilter.sh skipped: missing script or urls.txt ."
+fi
+
+if has_file "findurls.txt"; then
+    cat findurls.txt >> "$JS_FILE"
+    sort -u "$JS_FILE" -o "$JS_FILE"
+    echo "[+] reconfilter findurls.txt appended to js.txt"
+fi
+
 log "STEP 14: XSS SCAN"
 if has_script "xssrecon.sh" && has_file "parameters.txt"; then
     echo "[*] Running xssrecon.sh on parameters.txt..."

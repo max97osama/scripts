@@ -50,24 +50,6 @@ while IFS= read -r TARGET; do
 
     sleep 5
 
-    echo "[*] Running linkfinder on $TARGET..."
-    linkfinder \
-        -i "$TARGET" \
-        -d \
-        -o cli \
-        2>/dev/null | grep -oE "https?://[^ ]+" >> "$RAW_ALL"
-
-    sleep 5
-
-    echo "[*] Running secretfinder on $TARGET..."
-    secretfinder \
-        -i "$TARGET" \
-        -e \
-        -o cli \
-        2>/dev/null | grep -oE "https?://[^ ]+" >> "$RAW_ALL"
-
-    sleep 5
-
     echo "[*] Running xnLinkFinder on $TARGET..."
     xnLinkFinder \
         -i "$TARGET" \
